@@ -21,6 +21,29 @@
             cargoLock.lockFile = ./host/Cargo.lock;
           };
 
+          popup = pkgs.stdenv.mkDerivation (finalAttrs: {
+            pname = "userscripts-popup";
+            version = "0.1.0";
+            src = ./popup;
+            pnpmDeps = pkgs.fetchPnpmDeps {
+              inherit (finalAttrs) pname version src;
+              hash = "sha256-iNQZ5q/MqWY2TmJ3HquhK8EnbOrYDaQhNXj8auz9KoI=";
+              fetcherVersion = 2;
+            };
+            nativeBuildInputs = [ pkgs.nodejs pkgs.pnpm_10 pkgs.pnpmConfigHook ];
+            buildPhase = ''
+              runHook preBuild
+              pnpm vite build --outDir dist
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out
+              cp -r dist/* $out/
+              runHook postInstall
+            '';
+          });
+
           extension = pkgs.stdenv.mkDerivation {
             pname = "userscripts-extension";
             version = "0.1.0";
@@ -31,6 +54,7 @@
               mkdir -p $out/share/chromium-extension $out/bin
 
               cp -r * $out/share/chromium-extension/
+              cp -r ${popup} $out/share/chromium-extension/popup
 
               makeWrapper ${host}/bin/userscripts-host $out/bin/userscripts-host \
                 --run 'exec 2> >(${pkgs.systemd}/bin/systemd-cat -t userscripts)'
@@ -50,7 +74,7 @@
             paths = [
               extension
               crxPkg.package
-              (pkgs.linkFarm "userscripts-native" [
+              (pkgs.linkFarm "userscripts-native-messaging" [
                 { name = "etc/chromium/native-messaging-hosts/com.userscripts.host.json";
                   path = pkgs.writeText "com.userscripts.host.json" (builtins.toJSON {
                     name = "com.userscripts.host";

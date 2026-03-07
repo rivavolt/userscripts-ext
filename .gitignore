@@ -1,2 +1,4 @@
 host/target/
 result
+extension/popup/
+popup/node_modules/
