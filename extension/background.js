@@ -10,6 +10,15 @@ let port = null;
 let reconnectTimer = null;
 let syncIds = null; // track IDs during initial sync
 
+// --- Logging (bridge to native host -> journalctl) ---
+
+function log(level, message) {
+  console[level === 'error' ? 'error' : 'log'](`[userscripts] ${message}`);
+  if (port) {
+    try { port.postMessage({ type: 'log', level, message }); } catch (e) {}
+  }
+}
+
 // --- Native messaging ---
 
 function connect() {
@@ -21,15 +30,16 @@ function connect() {
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST);
   } catch (e) {
-    console.error('Failed to connect to native host:', e);
+    log('error', `Failed to connect to native host: ${e}`);
     scheduleReconnect();
     return;
   }
 
   syncIds = new Set();
+  log('info', 'Connected to native host');
   port.onMessage.addListener(handleMessage);
   port.onDisconnect.addListener(() => {
-    console.error('Native host disconnected:', chrome.runtime.lastError?.message);
+    log('error', `Native host disconnected: ${chrome.runtime.lastError?.message}`);
     port = null;
     scheduleReconnect();
   });
@@ -55,6 +65,7 @@ async function handleMessage(msg) {
       break;
     case 'ready':
       await cleanupStaleScripts();
+      log('info', `Sync complete: ${registry.size} scripts loaded`);
       syncIds = null;
       break;
   }
@@ -63,7 +74,7 @@ async function handleMessage(msg) {
 async function handleScriptUpdate(id, content) {
   const metadata = parseMetadata(content);
   if (!metadata) {
-    console.error(`Failed to parse metadata for ${id}`);
+    log('error', `Failed to parse metadata for ${id}`);
     return;
   }
 
@@ -113,7 +124,7 @@ async function fetchRequires(urls) {
         code = await resp.text();
         requireCache.set(url, code);
       } catch (e) {
-        console.error(`Failed to fetch @require ${url}:`, e);
+        log('error', `Failed to fetch @require ${url}: ${e}`);
         continue;
       }
     }
@@ -179,7 +190,7 @@ async function registerWithChrome(id, content, metadata, requireCode) {
       await chrome.userScripts.register([registration]);
     }
   } catch (e) {
-    console.error(`Failed to register ${id}:`, e);
+    log('error', `Failed to register ${id}: ${e.message}`);
   }
 }
 

@@ -88,15 +88,26 @@ fn main() {
         return;
     }
 
-    // drain stdin in background (Chrome expects us to read it)
+    // read messages from extension (log errors to stderr/journalctl)
     thread::spawn(|| {
         let stdin = io::stdin();
         let mut handle = stdin.lock();
-        let mut buf = [0u8; 4096];
         loop {
-            match handle.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                _ => {}
+            let mut len_bytes = [0u8; 4];
+            if handle.read_exact(&mut len_bytes).is_err() {
+                break;
+            }
+            let len = u32::from_le_bytes(len_bytes) as usize;
+            let mut buf = vec![0u8; len];
+            if handle.read_exact(&mut buf).is_err() {
+                break;
+            }
+            if let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&buf) {
+                if msg["type"] == "log" {
+                    let level = msg["level"].as_str().unwrap_or("info");
+                    let text = msg["message"].as_str().unwrap_or("");
+                    eprintln!("[userscripts] [{level}] {text}");
+                }
             }
         }
     });
