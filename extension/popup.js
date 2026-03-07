@@ -1,10 +1,11 @@
 function matchesUrl(patterns, url) {
   if (!url) return false;
   for (const pattern of patterns) {
-    const re = pattern
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/\\\*/g, '.*');
-    if (new RegExp('^' + re + '$').test(url)) return true;
+    // Split on * first, escape each part, rejoin with .*
+    const re = pattern.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+    try {
+      if (new RegExp('^' + re + '$').test(url)) return true;
+    } catch (e) {}
   }
   return false;
 }
@@ -97,4 +98,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.scriptData) render();
 });
 
-render();
+render().catch(e => {
+  document.getElementById('scripts').textContent = `Error: ${e.message}`;
+});

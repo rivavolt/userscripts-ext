@@ -8,9 +8,10 @@ const registry = new Map(); // id -> {content, metadata, requireCode, enabled}
 const requireCache = new Map(); // url -> code
 let port = null;
 let reconnectTimer = null;
-let syncIds = null; // track IDs during initial sync
+let messageQueue = Promise.resolve();
+let connected = false;
 
-// --- Logging (bridge to native host -> journalctl) ---
+// --- Logging (bridge to native host -> journal) ---
 
 function log(level, message) {
   console[level === 'error' ? 'error' : 'log'](`[userscripts] ${message}`);
@@ -22,6 +23,9 @@ function log(level, message) {
 // --- Native messaging ---
 
 function connect() {
+  if (connected) return;
+  connected = true;
+
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -30,17 +34,22 @@ function connect() {
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST);
   } catch (e) {
+    connected = false;
     log('error', `Failed to connect to native host: ${e}`);
     scheduleReconnect();
     return;
   }
 
-  syncIds = new Set();
   log('info', 'Connected to native host');
-  port.onMessage.addListener(handleMessage);
+  port.onMessage.addListener((msg) => {
+    messageQueue = messageQueue.then(() => handleMessage(msg)).catch(e => {
+      log('error', `Message handler error: ${e.message}\n${e.stack}`);
+    });
+  });
   port.onDisconnect.addListener(() => {
     log('error', `Native host disconnected: ${chrome.runtime.lastError?.message}`);
     port = null;
+    connected = false;
     scheduleReconnect();
   });
 }
@@ -57,17 +66,22 @@ async function handleMessage(msg) {
   switch (msg.type) {
     case 'added':
     case 'changed':
-      if (syncIds) syncIds.add(msg.id);
       await handleScriptUpdate(msg.id, msg.content);
       break;
     case 'removed':
       await handleScriptRemoved(msg.id);
       break;
-    case 'ready':
+    case 'ready': {
       await cleanupStaleScripts();
-      log('info', `Sync complete: ${registry.size} scripts loaded`);
-      syncIds = null;
+      await persistMeta();
+
+      // verify
+      const scripts = await chrome.userScripts.getScripts();
+      const { [STORAGE_KEY]: data } = await chrome.storage.local.get(STORAGE_KEY);
+      const storageCount = data ? Object.keys(data).length : 0;
+      log('info', `Sync done: registry=${registry.size} chrome=${scripts.length} storage=${storageCount}`);
       break;
+    }
   }
 }
 
@@ -79,12 +93,10 @@ async function handleScriptUpdate(id, content) {
   }
 
   const requireCode = await fetchRequires(metadata.require || []);
-
   const { [STATE_KEY]: states = {} } = await chrome.storage.local.get(STATE_KEY);
   const enabled = states[id] !== false;
 
   registry.set(id, { content, metadata, requireCode, enabled });
-  await persistMeta();
 
   if (!enabled) return;
   await registerWithChrome(id, content, metadata, requireCode);
@@ -93,21 +105,22 @@ async function handleScriptUpdate(id, content) {
 async function handleScriptRemoved(id) {
   registry.delete(id);
   await persistMeta();
-
   try {
     await chrome.userScripts.unregister({ ids: [id] });
-  } catch (e) {
-    // might not be registered (was disabled)
-  }
+  } catch (e) {}
 }
 
 async function cleanupStaleScripts() {
-  const registered = await chrome.userScripts.getScripts();
-  const knownIds = new Set(registry.keys());
-  const staleIds = registered.map(s => s.id).filter(id => !knownIds.has(id));
-
-  if (staleIds.length > 0) {
-    await chrome.userScripts.unregister({ ids: staleIds });
+  try {
+    const registered = await chrome.userScripts.getScripts();
+    const knownIds = new Set(registry.keys());
+    const staleIds = registered.map(s => s.id).filter(id => !knownIds.has(id));
+    if (staleIds.length > 0) {
+      log('info', `Cleaning up ${staleIds.length} stale scripts`);
+      await chrome.userScripts.unregister({ ids: staleIds });
+    }
+  } catch (e) {
+    log('error', `cleanupStaleScripts failed: ${e.message}`);
   }
 }
 
@@ -142,27 +155,42 @@ const RUN_AT_MAP = {
   'document-body': 'document_end',
 };
 
+const GM_SHIMS = `
+if (typeof GM_addStyle === 'undefined') {
+  function GM_addStyle(css) {
+    const style = document.createElement('style');
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+    return style;
+  }
+}
+if (typeof GM === 'undefined') {
+  var GM = {};
+}
+if (!GM.registerMenuCommand) {
+  GM.registerMenuCommand = function() {};
+}
+`;
+
 async function registerWithChrome(id, content, metadata, requireCode) {
-  const allCode = [...requireCode, content].join('\n');
+  const allCode = [GM_SHIMS, ...requireCode, content].join('\n');
 
   const registration = {
     id,
     js: [{ code: allCode }],
     allFrames: !metadata.noframes,
-    world: 'MAIN',
+    world: 'USER_SCRIPT',
   };
 
   if (metadata.match?.length > 0) {
     registration.matches = metadata.match;
   }
 
-  // @include globs (filter out /regex/ patterns)
   const includeGlobs = (metadata.include || []).filter(p => !(p.startsWith('/') && p.endsWith('/')));
   if (includeGlobs.length > 0) {
     registration.includeGlobs = includeGlobs;
   }
 
-  // @exclude
   const excludeGlobs = (metadata.exclude || []).filter(p => !(p.startsWith('/') && p.endsWith('/')));
   if (excludeGlobs.length > 0) {
     registration.excludeGlobs = excludeGlobs;
@@ -172,7 +200,6 @@ async function registerWithChrome(id, content, metadata, requireCode) {
     registration.excludeMatches = metadata['exclude-match'];
   }
 
-  // need at least one match pattern
   if (!registration.matches && !registration.includeGlobs) {
     registration.matches = ['*://*/*'];
   }
@@ -203,17 +230,13 @@ async function toggleScript(id, enabled) {
 
   const info = registry.get(id);
   if (!info) return;
-
   info.enabled = enabled;
 
   if (enabled) {
     await registerWithChrome(id, info.content, info.metadata, info.requireCode);
   } else {
-    try {
-      await chrome.userScripts.unregister({ ids: [id] });
-    } catch (e) { /* might not be registered */ }
+    try { await chrome.userScripts.unregister({ ids: [id] }); } catch (e) {}
   }
-
   await persistMeta();
 }
 
@@ -243,13 +266,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // --- Init ---
 
-if (!chrome.userScripts) {
-  chrome.storage.local.set({ [STORAGE_KEY]: { _error: {
-    name: 'User Scripts API unavailable',
-    matches: ['Enable "Developer mode" in chrome://extensions'],
-    description: 'Chrome 138+: also enable "Allow User Scripts" for this extension',
-    enabled: false,
-  }}});
-} else {
-  connect();
+function init() {
+  if (!chrome.userScripts) {
+    log('error', 'chrome.userScripts API unavailable');
+    chrome.storage.local.set({ [STORAGE_KEY]: { _error: {
+      name: 'User Scripts API unavailable',
+      matches: ['Enable "Developer mode" in chrome://extensions'],
+      description: 'Chrome 138+: also enable "Allow User Scripts" for this extension',
+      enabled: false,
+    }}});
+  } else {
+    connect();
+  }
 }
+
+chrome.runtime.onStartup.addListener(() => init());
+chrome.runtime.onInstalled.addListener(() => init());
+init();

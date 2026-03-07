@@ -58,6 +58,8 @@ fn main() {
     let scripts_dir = get_scripts_dir();
     fs::create_dir_all(&scripts_dir).expect("Failed to create scripts directory");
 
+    eprintln!("Starting, scripts_dir={}", scripts_dir.display());
+
     let mut known: HashMap<String, u64> = HashMap::new();
 
     // initial scan
@@ -77,6 +79,7 @@ fn main() {
                 }))
                 .is_err()
                 {
+                    eprintln!("Failed to send added message, exiting");
                     return;
                 }
                 known.insert(id, hash);
@@ -84,11 +87,14 @@ fn main() {
         }
     }
 
+    eprintln!("Sent {} scripts, sending ready", known.len());
+
     if send_message(&json!({"type": "ready"})).is_err() {
+        eprintln!("Failed to send ready message, exiting");
         return;
     }
 
-    // read messages from extension (log errors to stderr/journalctl)
+    // read messages from extension -> stderr (-> journal via wrapper)
     thread::spawn(|| {
         let stdin = io::stdin();
         let mut handle = stdin.lock();
@@ -106,7 +112,7 @@ fn main() {
                 if msg["type"] == "log" {
                     let level = msg["level"].as_str().unwrap_or("info");
                     let text = msg["message"].as_str().unwrap_or("");
-                    eprintln!("[userscripts] [{level}] {text}");
+                    eprintln!("[{level}] {text}");
                 }
             }
         }
