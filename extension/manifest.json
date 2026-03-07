@@ -6,7 +6,8 @@
   "permissions": [
     "userScripts",
     "nativeMessaging",
-    "storage"
+    "storage",
+    "activeTab"
   ],
   "background": {
     "service_worker": "background.js",
