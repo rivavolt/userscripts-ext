@@ -1,0 +1,41 @@
+body {
+  width: 320px;
+  margin: 0;
+  padding: 8px;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.script-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.script-row:last-child {
+  border-bottom: none;
+}
+
+.script-info {
+  min-width: 0;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.script-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-matches {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

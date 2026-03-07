@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Userscripts",
+  "version": "0.1.0",
+  "description": "Declarative userscript manager with filesystem-native hot reload",
+  "permissions": [
+    "userScripts",
+    "nativeMessaging",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "user_scripts": {}
+}
