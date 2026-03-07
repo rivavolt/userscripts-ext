@@ -232,4 +232,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // --- Init ---
 
-connect();
+if (!chrome.userScripts) {
+  chrome.storage.local.set({ [STORAGE_KEY]: { _error: {
+    name: 'User Scripts API unavailable',
+    matches: ['Enable "Developer mode" in chrome://extensions'],
+    description: 'Chrome 138+: also enable "Allow User Scripts" for this extension',
+    enabled: false,
+  }}});
+} else {
+  connect();
+}
