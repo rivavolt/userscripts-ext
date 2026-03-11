@@ -268,11 +268,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 function init() {
   if (!chrome.userScripts) {
-    log('error', 'chrome.userScripts API unavailable');
+    log('error', 'userScripts API unavailable');
+    const isFirefox = typeof browser !== 'undefined';
     chrome.storage.local.set({ [STORAGE_KEY]: { _error: {
       name: 'User Scripts API unavailable',
-      matches: ['Enable "Developer mode" in chrome://extensions'],
-      description: 'Chrome 138+: also enable "Allow User Scripts" for this extension',
+      matches: isFirefox
+        ? ['Requires Firefox 131+ with Developer mode enabled']
+        : ['Enable "Developer mode" in chrome://extensions'],
+      description: isFirefox
+        ? ''
+        : 'Chrome 138+: also enable "Allow User Scripts" for this extension',
       enabled: false,
     }}});
   } else {

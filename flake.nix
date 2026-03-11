@@ -63,12 +63,31 @@
 
           manifest = builtins.fromJSON (builtins.readFile ./extension/manifest.json);
 
+          geckoId = "userscripts@andreivolt";
+
           crxPkg = nix-crx.lib.mkCrxPackage {
             inherit pkgs extension;
             key = ./keys/signing.pem;
             name = "userscripts";
             extId = "paaopceeojnejigehpccockddecaplbe";
             version = manifest.version;
+          };
+
+          extDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
+
+          firefoxXpi = pkgs.stdenv.mkDerivation {
+            pname = "userscripts-firefox-xpi";
+            version = "0.1.0";
+            dontUnpack = true;
+            nativeBuildInputs = [ pkgs.zip ];
+            buildPhase = ''
+              cd ${extension}/share/chromium-extension
+              zip -r $TMPDIR/extension.xpi .
+            '';
+            installPhase = ''
+              mkdir -p $out/${extDir}
+              cp $TMPDIR/extension.xpi $out/${extDir}/${geckoId}.xpi
+            '';
           };
 
         in {
@@ -78,6 +97,7 @@
             paths = [
               extension
               crxPkg.package
+              firefoxXpi
               (pkgs.linkFarm "userscripts-native-messaging" [
                 { name = "etc/chromium/native-messaging-hosts/com.userscripts.host.json";
                   path = pkgs.writeText "com.userscripts.host.json" (builtins.toJSON {
@@ -86,6 +106,15 @@
                     path = "${extension}/bin/userscripts-host";
                     type = "stdio";
                     allowed_origins = [ "chrome-extension://${crxPkg.extId}/" ];
+                  });
+                }
+                { name = "lib/mozilla/native-messaging-hosts/com.userscripts.host.json";
+                  path = pkgs.writeText "com.userscripts.host.firefox.json" (builtins.toJSON {
+                    name = "com.userscripts.host";
+                    description = "Userscripts native messaging host";
+                    path = "${extension}/bin/userscripts-host";
+                    type = "stdio";
+                    allowed_extensions = [ geckoId ];
                   });
                 }
               ])

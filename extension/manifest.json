@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Userscripts",
-  "version": "0.8.1",
+  "version": "0.8.6",
   "description": "Declarative userscript manager with filesystem-native hot reload",
   "permissions": [
     "userScripts",
@@ -15,6 +15,12 @@
   },
   "action": {
     "default_popup": "popup/index.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "userscripts@andreivolt",
+      "strict_min_version": "131.0"
+    }
   },
   "user_scripts": {}
 }
