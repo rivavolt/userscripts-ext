@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nix-crx.url = "github:andreivolt/nix-crx";
+    nix-crx.url = "github:rivavolt/nix-crx";
   };
 
   outputs = { self, nixpkgs, nix-crx }:
@@ -71,23 +71,6 @@
             name = "userscripts";
             extId = "paaopceeojnejigehpccockddecaplbe";
             version = manifest.version;
-          };
-
-          extDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
-
-          firefoxXpi = pkgs.stdenv.mkDerivation {
-            pname = "userscripts-firefox-xpi";
-            version = "0.1.0";
-            dontUnpack = true;
-            nativeBuildInputs = [ pkgs.zip ];
-            buildPhase = ''
-              cd ${extension}/share/chromium-extension
-              zip -r $TMPDIR/extension.xpi .
-            '';
-            installPhase = ''
-              mkdir -p $out/${extDir}
-              cp $TMPDIR/extension.xpi $out/${extDir}/${geckoId}.xpi
-            '';
           };
 
           extDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
