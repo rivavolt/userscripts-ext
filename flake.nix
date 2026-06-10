@@ -3,10 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nix-crx.url = "github:rivavolt/nix-crx";
+    nix-webext.url = "github:rivavolt/nix-webext";
   };
 
-  outputs = { self, nixpkgs, nix-crx }:
+  outputs = { self, nixpkgs, nix-webext }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
     in {
@@ -62,66 +62,42 @@
           };
 
           manifest = builtins.fromJSON (builtins.readFile ./extension/manifest.json);
-
           geckoId = "userscripts@andreivolt";
+          extId = "paaopceeojnejigehpccockddecaplbe";
 
-          crxPkg = nix-crx.lib.mkCrxPackage {
-            inherit pkgs extension;
-            key = ./keys/signing.pem;
-            name = "userscripts";
-            extId = "paaopceeojnejigehpccockddecaplbe";
+          nativeMessaging = pkgs.linkFarm "userscripts-native-messaging" [
+            { name = "etc/chromium/native-messaging-hosts/com.userscripts.host.json";
+              path = pkgs.writeText "com.userscripts.host.json" (builtins.toJSON {
+                name = "com.userscripts.host";
+                description = "Userscripts native messaging host";
+                path = "${extension}/bin/userscripts-host";
+                type = "stdio";
+                allowed_origins = [ "chrome-extension://${extId}/" ];
+              });
+            }
+            { name = "lib/mozilla/native-messaging-hosts/com.userscripts.host.json";
+              path = pkgs.writeText "com.userscripts.host.firefox.json" (builtins.toJSON {
+                name = "com.userscripts.host";
+                description = "Userscripts native messaging host";
+                path = "${extension}/bin/userscripts-host";
+                type = "stdio";
+                allowed_extensions = [ geckoId ];
+              });
+            }
+          ];
+
+          # Chrome CRX (signed at activation) + Firefox XPI + native-messaging
+          # hosts in `default`. extId is the stable Chrome ID the old committed key
+          # derived (key now in fleet sops).
+          ext = nix-webext.lib.mkBrowserExtension {
+            inherit pkgs extension extId geckoId;
+            pname = "userscripts";
             version = manifest.version;
+            extraPaths = [ nativeMessaging ];
           };
-
-          extDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
-
-          firefoxXpi = pkgs.stdenv.mkDerivation {
-            pname = "userscripts-firefox-xpi";
-            version = "0.1.0";
-            dontUnpack = true;
-            nativeBuildInputs = [ pkgs.zip ];
-            buildPhase = ''
-              cd ${extension}/share/chromium-extension
-              zip -r $TMPDIR/extension.xpi .
-            '';
-            installPhase = ''
-              mkdir -p $out/${extDir}
-              cp $TMPDIR/extension.xpi $out/${extDir}/${geckoId}.xpi
-            '';
-          };
-
         in {
           inherit host extension;
-          default = pkgs.symlinkJoin {
-            name = "userscripts";
-            paths = [
-              extension
-              crxPkg.package
-              firefoxXpi
-              (pkgs.linkFarm "userscripts-native-messaging" [
-                { name = "etc/chromium/native-messaging-hosts/com.userscripts.host.json";
-                  path = pkgs.writeText "com.userscripts.host.json" (builtins.toJSON {
-                    name = "com.userscripts.host";
-                    description = "Userscripts native messaging host";
-                    path = "${extension}/bin/userscripts-host";
-                    type = "stdio";
-                    allowed_origins = [ "chrome-extension://${crxPkg.extId}/" ];
-                  });
-                }
-                { name = "lib/mozilla/native-messaging-hosts/com.userscripts.host.json";
-                  path = pkgs.writeText "com.userscripts.host.firefox.json" (builtins.toJSON {
-                    name = "com.userscripts.host";
-                    description = "Userscripts native messaging host";
-                    path = "${extension}/bin/userscripts-host";
-                    type = "stdio";
-                    allowed_extensions = [ geckoId ];
-                  });
-                }
-              ])
-            ];
-          };
-        }
-      );
+        } // ext);
 
       devShells = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in {
