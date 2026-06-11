@@ -19,6 +19,9 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "userscripts@andreivolt",
+      "data_collection_permissions": {
+        "required": ["none"]
+      },
       "strict_min_version": "131.0"
     }
   },
