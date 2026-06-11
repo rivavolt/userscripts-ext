@@ -25,10 +25,10 @@
             pname = "userscripts-popup";
             version = "0.1.0";
             src = ./popup;
-            pnpmDeps = pkgs.fetchPnpmDeps {
+            pnpmDeps = pkgs.pnpm_10.fetchDeps {
               inherit (finalAttrs) pname version src;
-              hash = "sha256-iNQZ5q/MqWY2TmJ3HquhK8EnbOrYDaQhNXj8auz9KoI=";
-              fetcherVersion = 2;
+              hash = "sha256-i8OLpy5c41qnSOyFQXkEwsDY0+yn5Z1u3U7YwtHunUs=";
+              fetcherVersion = 3;
             };
             nativeBuildInputs = [ pkgs.nodejs pkgs.pnpm_10 pkgs.pnpmConfigHook ];
             buildPhase = ''
