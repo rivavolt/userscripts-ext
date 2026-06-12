@@ -103,6 +103,9 @@
         let pkgs = nixpkgs.legacyPackages.${system}; in {
           default = pkgs.mkShell {
             buildInputs = with pkgs; [ cargo rustc rust-analyzer ];
+            shellHook = ''
+              git config core.hooksPath .githooks 2>/dev/null || true
+            '';
           };
         }
       );
